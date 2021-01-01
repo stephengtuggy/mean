@@ -34,6 +34,7 @@ module.exports.initLocalVariables = function (app) {
   app.locals.keywords = config.app.keywords;
   app.locals.googleAnalyticsTrackingID = config.app.googleAnalyticsTrackingID;
   app.locals.facebookAppId = config.facebook.clientID;
+  app.locals.twitterUsername = config.twitter.username;
   app.locals.jsFiles = config.files.client.js;
   app.locals.cssFiles = config.files.client.css;
   app.locals.livereload = config.livereload;
@@ -117,7 +118,7 @@ module.exports.initSession = function (app, db) {
     },
     name: config.sessionKey,
     store: new MongoStore({
-      mongooseConnection: db.connection,
+      db: db,
       collection: config.sessionCollection
     })
   }));
@@ -129,18 +130,19 @@ module.exports.initSession = function (app, db) {
 /**
  * Invoke modules server configuration
  */
-module.exports.initModulesConfiguration = function (app, db) {
+module.exports.initModulesConfiguration = function (app) {
   config.files.server.configs.forEach(function (configPath) {
-    require(path.resolve(configPath))(app, db);
+    require(path.resolve(configPath))(app);
   });
 };
 
 /**
- * Configure Helmet headers configuration
+ * Configure Helmet headers configuration for security
  */
 module.exports.initHelmetHeaders = function (app) {
-  // Use helmet to secure Express headers
-  var SIX_MONTHS = 15778476000;
+  // six months expiration period specified in seconds
+  var SIX_MONTHS = 15778476;
+
   app.use(helmet.frameguard());
   app.use(helmet.xssFilter());
   app.use(helmet.noSniff());
@@ -158,7 +160,7 @@ module.exports.initHelmetHeaders = function (app) {
  */
 module.exports.initModulesClientRoutes = function (app) {
   // Setting the app router and static folder
-  app.use('/', express.static(path.resolve('./public')));
+  app.use('/', express.static(path.resolve('./public'), { maxAge: 86400000 }));
 
   // Globbing static routing
   config.folders.client.forEach(function (staticPath) {

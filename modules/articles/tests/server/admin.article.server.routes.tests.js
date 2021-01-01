@@ -23,7 +23,7 @@ var app,
 describe('Article Admin CRUD tests', function () {
   before(function (done) {
     // Get application
-    app = express.init(mongoose);
+    app = express.init(mongoose.connection.db);
     agent = request.agent(app);
 
     done();
@@ -32,7 +32,7 @@ describe('Article Admin CRUD tests', function () {
   beforeEach(function (done) {
     // Create user credentials
     credentials = {
-      username: 'username',
+      usernameOrEmail: 'username',
       password: 'M3@n.jsI$Aw3$0m3'
     };
 
@@ -43,20 +43,22 @@ describe('Article Admin CRUD tests', function () {
       displayName: 'Full Name',
       email: 'test@test.com',
       roles: ['user', 'admin'],
-      username: credentials.username,
+      username: credentials.usernameOrEmail,
       password: credentials.password,
       provider: 'local'
     });
 
     // Save a user to the test db and create new article
-    user.save(function () {
-      article = {
-        title: 'Article Title',
-        content: 'Article Content'
-      };
+    user.save()
+      .then(function () {
+        article = {
+          title: 'Article Title',
+          content: 'Article Content'
+        };
 
-      done();
-    });
+        done();
+      })
+      .catch(done);
   });
 
   it('should be able to save an article if logged in', function (done) {
@@ -170,7 +172,7 @@ describe('Article Admin CRUD tests', function () {
         // Save a new article
         agent.post('/api/articles')
           .send(article)
-          .expect(400)
+          .expect(422)
           .end(function (articleSaveErr, articleSaveRes) {
             // Set message assertion
             (articleSaveRes.body.message).should.match('Title cannot be blank');
@@ -275,8 +277,9 @@ describe('Article Admin CRUD tests', function () {
   });
 
   afterEach(function (done) {
-    User.remove().exec(function () {
-      Article.remove().exec(done);
-    });
+    Article.remove().exec()
+      .then(User.remove().exec())
+      .then(done())
+      .catch(done);
   });
 });

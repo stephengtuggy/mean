@@ -21,95 +21,86 @@ var _ = require('lodash'),
   wiredep = require('wiredep').stream,
   path = require('path'),
   endOfLine = require('os').EOL,
-  protractor = require('gulp-protractor').protractor,
-  webdriver_update = require('gulp-protractor').webdriver_update,
-  webdriver_standalone = require('gulp-protractor').webdriver_standalone,
-  KarmaServer = require('karma').Server;
+  del = require('del'),
+  semver = require('semver');
 
 // Local settings
 var changedTestFiles = [];
 
 // Set NODE_ENV to 'test'
-gulp.task('env:test', function () {
+gulp.task('env:test', function (done) {
   process.env.NODE_ENV = 'test';
+  return done();
 });
 
 // Set NODE_ENV to 'development'
-gulp.task('env:dev', function () {
+gulp.task('env:dev', function (done) {
   process.env.NODE_ENV = 'development';
+  return done();
 });
 
 // Set NODE_ENV to 'production'
-gulp.task('env:prod', function () {
+gulp.task('env:prod', function (done) {
   process.env.NODE_ENV = 'production';
+  return done();
 });
 
 // Nodemon task
-gulp.task('nodemon', function () {
+gulp.task('nodemon', function (done) {
+
+  // Node.js v7 and newer use different debug argument
+  var debugArgument = semver.satisfies(process.versions.node, '>=7.0.0') ? '--inspect' : '--debug';
+
   return plugins.nodemon({
     script: 'server.js',
-    nodeArgs: ['--debug'],
-    ext: 'js,html',
-    watch: _.union(defaultAssets.server.views, defaultAssets.server.allJS, defaultAssets.server.config)
-  });
-});
-
-gulp.task('node-inspector', function() {
-  gulp.src([])
-    .pipe(plugins.nodeInspector({
-      debugPort: 5858,
-      webHost: '0.0.0.0',
-      webPort: 1337,
-      saveLiveEdit: false,
-      preload: true,
-      inject: true,
-      hidden: [],
-      stackTraceLimit: 50,
-      sslKey: '',
-      sslCert: ''
-    }));
-});
-
-// Nodemon debug task
-gulp.task('nodemon-debug', function () {
-  return plugins.nodemon({
-    script: 'server.js',
-    nodeArgs: ['--debug'],
+    nodeArgs: [debugArgument],
     ext: 'js,html',
     verbose: true,
     watch: _.union(defaultAssets.server.views, defaultAssets.server.allJS, defaultAssets.server.config)
-  });
+  })
+    .on('start', done);
+
+});
+
+// Nodemon task without verbosity or debugging
+gulp.task('nodemon-nodebug', function (done) {
+  return plugins.nodemon({
+    script: 'server.js',
+    ext: 'js,html',
+    watch: _.union(defaultAssets.server.views, defaultAssets.server.allJS, defaultAssets.server.config)
+  })
+    .on('start', done);
 });
 
 // Watch Files For Changes
 gulp.task('watch', function () {
   // Start livereload
-  plugins.livereload.listen();
+  plugins.refresh.listen();
 
   // Add watch rules
-  gulp.watch(defaultAssets.server.views).on('change', plugins.livereload.changed);
-  gulp.watch(defaultAssets.server.allJS, ['eslint']).on('change', plugins.livereload.changed);
-  gulp.watch(defaultAssets.client.js, ['eslint']).on('change', plugins.livereload.changed);
-  gulp.watch(defaultAssets.client.css, ['csslint']).on('change', plugins.livereload.changed);
-  gulp.watch(defaultAssets.client.sass, ['sass', 'csslint']).on('change', plugins.livereload.changed);
-  gulp.watch(defaultAssets.client.less, ['less', 'csslint']).on('change', plugins.livereload.changed);
+  gulp.watch(defaultAssets.server.views).on('change', plugins.refresh.changed);
+  gulp.watch(defaultAssets.server.allJS, gulp.series('eslint')).on('change', plugins.refresh.changed);
+  gulp.watch(defaultAssets.client.js, gulp.series('eslint')).on('change', plugins.refresh.changed);
+  gulp.watch(defaultAssets.client.css, gulp.series('csslint')).on('change', plugins.refresh.changed);
+  gulp.watch(defaultAssets.client.sass, gulp.series('sass', 'csslint')).on('change', plugins.refresh.changed);
+  gulp.watch(defaultAssets.client.less, gulp.series('less', 'csslint')).on('change', plugins.refresh.changed);
 
   if (process.env.NODE_ENV === 'production') {
-    gulp.watch(defaultAssets.server.gulpConfig, ['templatecache', 'eslint']);
-    gulp.watch(defaultAssets.client.views, ['templatecache']).on('change', plugins.livereload.changed);
+    gulp.watch(defaultAssets.server.gulpConfig, gulp.series('templatecache', 'eslint'));
+    gulp.watch(defaultAssets.client.views, gulp.series('templatecache')).on('change', plugins.refresh.changed);
   } else {
-    gulp.watch(defaultAssets.server.gulpConfig, ['eslint']);
-    gulp.watch(defaultAssets.client.views).on('change', plugins.livereload.changed);
+    gulp.watch(defaultAssets.server.gulpConfig, gulp.series('eslint'));
+    gulp.watch(defaultAssets.client.views).on('change', plugins.refresh.changed);
   }
 });
 
 // Watch server test files
 gulp.task('watch:server:run-tests', function () {
   // Start livereload
-  plugins.livereload.listen();
+  plugins.refresh.listen();
 
   // Add Server Test file rules
-  gulp.watch([testAssets.tests.server, defaultAssets.server.allJS], ['test:server']).on('change', function (file) {
+  gulp.watch([testAssets.tests.server, defaultAssets.server.allJS], gulp.series('test:server')).on('change', function (file) {
     changedTestFiles = [];
 
     // iterate through server test glob patterns
@@ -120,11 +111,10 @@ gulp.task('watch:server:run-tests', function () {
 
         if (filePath === path.resolve(file.path)) {
           changedTestFiles.push(f);
+          plugins.refresh.changed(f);
         }
       });
     });
-
-    plugins.livereload.changed();
   });
 });
 
@@ -159,13 +149,17 @@ gulp.task('uglify', function () {
     defaultAssets.client.js,
     defaultAssets.client.templates
   );
+  del(['public/dist/*']);
 
   return gulp.src(assets)
     .pipe(plugins.ngAnnotate())
     .pipe(plugins.uglify({
-      mangle: false
+      mangle: true
+    }).on('error', function (err) {
+      console.log('Uglify error : ', err.toString());
     }))
     .pipe(plugins.concat('application.min.js'))
+    .pipe(plugins.rev())
     .pipe(gulp.dest('public/dist'));
 });
 
@@ -174,6 +168,7 @@ gulp.task('cssmin', function () {
   return gulp.src(defaultAssets.client.css)
     .pipe(plugins.csso())
     .pipe(plugins.concat('application.min.css'))
+    .pipe(plugins.rev())
     .pipe(gulp.dest('public/dist'));
 });
 
@@ -182,9 +177,6 @@ gulp.task('sass', function () {
   return gulp.src(defaultAssets.client.sass)
     .pipe(plugins.sass())
     .pipe(plugins.autoprefixer())
-    .pipe(plugins.rename(function (file) {
-      file.dirname = file.dirname.replace(path.sep + 'scss', path.sep + 'css');
-    }))
     .pipe(gulp.dest('./modules/'));
 });
 
@@ -193,9 +185,6 @@ gulp.task('less', function () {
   return gulp.src(defaultAssets.client.less)
     .pipe(plugins.less())
     .pipe(plugins.autoprefixer())
-    .pipe(plugins.rename(function (file) {
-      file.dirname = file.dirname.replace(path.sep + 'less', path.sep + 'css');
-    }))
     .pipe(gulp.dest('./modules/'));
 });
 
@@ -253,7 +242,7 @@ gulp.task('wiredep:prod', function () {
 });
 
 // Copy local development environment config example
-gulp.task('copyLocalEnvConfig', function () {
+gulp.task('copyLocalEnvConfig', function (done) {
   var src = [];
   var renameTo = 'local-development.js';
 
@@ -262,17 +251,24 @@ gulp.task('copyLocalEnvConfig', function () {
     src.push('config/env/local.example.js');
   }
 
+  if (!src.length) {
+    return done();
+  }
+
   return gulp.src(src)
     .pipe(plugins.rename(renameTo))
     .pipe(gulp.dest('config/env'));
 });
 
 // Make sure upload directory exists
-gulp.task('makeUploadsDir', function () {
+gulp.task('makeUploadsDir', function (done) {
   return fs.mkdir('modules/users/client/img/profile/uploads', function (err) {
     if (err && err.code !== 'EEXIST') {
       console.error(err);
+      return done(err);
     }
+
+    return done();
   });
 });
 
@@ -280,7 +276,7 @@ gulp.task('makeUploadsDir', function () {
 gulp.task('templatecache', function () {
   return gulp.src(defaultAssets.client.views)
     .pipe(plugins.templateCache('templates.js', {
-      root: 'modules/',
+      root: '/modules/',
       module: 'core',
       templateHeader: '(function () {' + endOfLine + '	\'use strict\';' + endOfLine + endOfLine + '	angular' + endOfLine + '		.module(\'<%= module %>\'<%= standalone %>)' + endOfLine + '		.run(templates);' + endOfLine + endOfLine + '	templates.$inject = [\'$templateCache\'];' + endOfLine + endOfLine + '	function templates($templateCache) {' + endOfLine,
       templateBody: '		$templateCache.put(\'<%= url %>\', \'<%= contents %>\');',
@@ -291,15 +287,15 @@ gulp.task('templatecache', function () {
 
 // Mocha tests task
 gulp.task('mocha', function (done) {
-  // Open mongoose connections
-  var mongoose = require('./config/lib/mongoose.js');
+  var mongooseService = require('./config/lib/mongoose');
   var testSuites = changedTestFiles.length ? changedTestFiles : testAssets.tests.server;
   var error;
 
   // Connect mongoose
-  mongoose.connect(function () {
-    mongoose.loadModels();
-    // Run the tests
+  mongooseService.connect(function (db) {
+    // Load mongoose models
+    mongooseService.loadModels();
+
     gulp.src(testSuites)
       .pipe(plugins.mocha({
         reporter: 'spec',
@@ -310,9 +306,13 @@ gulp.task('mocha', function (done) {
         error = err;
       })
       .on('end', function () {
-        // When the tests are done, disconnect mongoose and pass the error state back to gulp
-        mongoose.disconnect(function () {
-          done(error);
+        mongooseService.disconnect(function (err) {
+          if (err) {
+            console.log('Error disconnecting from database');
+            console.log(err);
+          }
+
+          return done(error);
         });
       });
   });
@@ -330,24 +330,26 @@ gulp.task('pre-test', function () {
 });
 
 // Run istanbul test and write report
-gulp.task('mocha:coverage', ['pre-test', 'mocha'], function () {
+gulp.task('mocha:coverage', gulp.series('pre-test', 'mocha', function () {
   var testSuites = changedTestFiles.length ? changedTestFiles : testAssets.tests.server;
 
   return gulp.src(testSuites)
     .pipe(plugins.istanbul.writeReports({
       reportOpts: { dir: './coverage/server' }
     }));
-});
+}));
 
 // Karma test runner task
 gulp.task('karma', function (done) {
+  var KarmaServer = require('karma').Server;
   new KarmaServer({
     configFile: __dirname + '/karma.conf.js'
   }, done).start();
 });
 
 // Run karma with coverage options set and write report
-gulp.task('karma:coverage', function(done) {
+gulp.task('karma:coverage', function (done) {
+  var KarmaServer = require('karma').Server;
   new KarmaServer({
     configFile: __dirname + '/karma.conf.js',
     preprocessors: {
@@ -376,93 +378,130 @@ gulp.task('karma:coverage', function(done) {
 // Drops the MongoDB database, used in e2e testing
 gulp.task('dropdb', function (done) {
   // Use mongoose configuration
-  var mongoose = require('./config/lib/mongoose.js');
+  var mongooseService = require('./config/lib/mongoose');
 
-  mongoose.connect(function (db) {
-    db.connection.db.dropDatabase(function (err) {
+  mongooseService.connect(function (db) {
+    db.dropDatabase(function (err) {
       if (err) {
         console.error(err);
       } else {
-        console.log('Successfully dropped db: ', db.connection.db.databaseName);
+        console.log('Successfully dropped db: ', db.databaseName);
       }
-      db.connection.db.close(done);
+
+      mongooseService.disconnect(done);
     });
   });
 });
 
-// Downloads the selenium webdriver
-gulp.task('webdriver_update', webdriver_update);
+// Seed Mongo database based on configuration
+gulp.task('mongo-seed', function (done) {
+  var db = require('./config/lib/mongoose');
+  var seed = require('./config/lib/mongo-seed');
+
+  // Open mongoose database connection
+  db.connect(function () {
+    db.loadModels();
+
+    seed
+      .start({
+        options: {
+          logResults: true
+        }
+      })
+      .then(function () {
+        // Disconnect and finish task
+        db.disconnect(done);
+      })
+      .catch(function (err) {
+        db.disconnect(function (disconnectError) {
+          if (disconnectError) {
+            console.log('Error disconnecting from the database, but was preceded by a Mongo Seed error.');
+          }
+
+          // Finish task with error
+          done(err);
+        });
+      });
+  });
+
+});
+
+// Downloads the selenium webdriver if protractor version is compatible
+gulp.task('webdriver_update', function (done) {
+  return require('gulp-protractor').webdriver_update(done);
+});
 
 // Start the standalone selenium server
 // NOTE: This is not needed if you reference the
 // seleniumServerJar in your protractor.conf.js
-gulp.task('webdriver_standalone', webdriver_standalone);
+gulp.task('webdriver_standalone', function (done) {
+  return require('gulp-protractor').webdriver_standalone(done);
+});
 
 // Protractor test runner task
-gulp.task('protractor', ['webdriver_update'], function () {
-  gulp.src([])
+gulp.task('protractor', gulp.series('webdriver_update', function (done) {
+  var protractor = require('gulp-protractor').protractor;
+  var testSuites = changedTestFiles.length ? changedTestFiles : testAssets.tests.e2e;
+
+  gulp.src(testSuites)
     .pipe(protractor({
       configFile: 'protractor.conf.js'
     }))
-    .on('end', function() {
+    .on('end', function () {
       console.log('E2E Testing complete');
       // exit with success.
       process.exit(0);
     })
-    .on('error', function(err) {
+    .on('error', function (err) {
       console.error('E2E Tests failed:');
       console.error(err);
       process.exit(1);
     });
-});
+}));
 
 // Lint CSS and JavaScript files.
-gulp.task('lint', function (done) {
-  runSequence('less', 'sass', ['csslint', 'eslint'], done);
-});
+gulp.task('lint',
+  gulp.parallel('less', 'sass', gulp.series('csslint', 'eslint')));
 
 // Lint project files and minify them into two production files.
-gulp.task('build', function (done) {
-  runSequence('env:dev', 'wiredep:prod', 'lint', ['uglify', 'cssmin'], done);
-});
+gulp.task('build',
+  gulp.series('wiredep:prod', 'lint', gulp.parallel('uglify', 'cssmin')));
+
+gulp.task('test:server',
+  gulp.series('env:test', gulp.parallel('copyLocalEnvConfig', 'makeUploadsDir', 'dropdb'), 'lint', 'mocha'));
 
 // Run the project tests
-gulp.task('test', function (done) {
-  runSequence('env:test', 'test:server', 'karma', 'nodemon', 'protractor', done);
-});
-
-gulp.task('test:server', function (done) {
-  runSequence('env:test', ['copyLocalEnvConfig', 'makeUploadsDir', 'dropdb'], 'lint', 'mocha', done);
-});
+gulp.task('test',
+  gulp.series('env:test', 'test:server', 'karma'));
 
 // Watch all server files for changes & run server tests (test:server) task on changes
-gulp.task('test:server:watch', function (done) {
-  runSequence('test:server', 'watch:server:run-tests', done);
-});
+gulp.task('test:server:watch',
+  gulp.series('test:server', 'watch:server:run-tests'));
 
-gulp.task('test:client', function (done) {
-  runSequence('env:test', 'lint', 'dropdb', 'karma', done);
-});
+gulp.task('test:client',
+  gulp.series('env:test', 'lint', 'dropdb', 'karma'));
 
-gulp.task('test:e2e', function (done) {
-  runSequence('env:test', 'lint', 'dropdb', 'nodemon', 'protractor', done);
-});
+gulp.task('test:e2e',
+  gulp.series('env:test', 'lint', 'dropdb', 'nodemon', 'protractor'));
 
-gulp.task('test:coverage', function (done) {
-  runSequence('env:test', ['copyLocalEnvConfig', 'makeUploadsDir', 'dropdb'], 'lint', 'mocha:coverage', 'karma:coverage', done);
-});
+gulp.task('test:coverage',
+  gulp.series('env:test', gulp.parallel('copyLocalEnvConfig', 'makeUploadsDir', 'dropdb'), 'lint', 'mocha:coverage', 'karma:coverage'));
 
-// Run the project in development mode
-gulp.task('default', function (done) {
-  runSequence('env:dev', ['copyLocalEnvConfig', 'makeUploadsDir'], 'lint', ['nodemon', 'watch'], done);
-});
-
-// Run the project in debug mode
-gulp.task('debug', function (done) {
-  runSequence('env:dev', ['copyLocalEnvConfig', 'makeUploadsDir'], 'lint', ['node-inspector', 'nodemon-debug', 'watch'], done);
-});
+// Run the project in development mode with node debugger enabled
+gulp.task('default',
+  gulp.series(gulp.parallel('copyLocalEnvConfig', 'makeUploadsDir'), 'lint', gulp.parallel('nodemon', 'watch')));
 
 // Run the project in production mode
-gulp.task('prod', function (done) {
-  runSequence(['copyLocalEnvConfig', 'makeUploadsDir', 'templatecache'], 'build', 'env:prod', 'lint', ['nodemon', 'watch'], done);
-});
+gulp.task('prod',
+  gulp.series(gulp.parallel('copyLocalEnvConfig', 'makeUploadsDir', 'templatecache'), 'env:prod', 'build', 'lint', gulp.parallel('nodemon-nodebug', 'watch')));
+
+// Run Mongo Seed with default environment config
+gulp.task('seed',
+  gulp.series('env:dev', 'mongo-seed'));
+
+// Run Mongo Seed with production environment config
+gulp.task('seed:prod',
+  gulp.series('env:prod', 'mongo-seed'));
+
+gulp.task('seed:test',
+  gulp.series('env:test', 'mongo-seed'));

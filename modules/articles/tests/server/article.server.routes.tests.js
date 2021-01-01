@@ -24,7 +24,7 @@ describe('Article CRUD tests', function () {
 
   before(function (done) {
     // Get application
-    app = express.init(mongoose);
+    app = express.init(mongoose.connection.db);
     agent = request.agent(app);
 
     done();
@@ -33,7 +33,7 @@ describe('Article CRUD tests', function () {
   beforeEach(function (done) {
     // Create user credentials
     credentials = {
-      username: 'username',
+      usernameOrEmail: 'username',
       password: 'M3@n.jsI$Aw3$0m3'
     };
 
@@ -43,20 +43,22 @@ describe('Article CRUD tests', function () {
       lastName: 'Name',
       displayName: 'Full Name',
       email: 'test@test.com',
-      username: credentials.username,
+      username: credentials.usernameOrEmail,
       password: credentials.password,
       provider: 'local'
     });
 
     // Save a user to the test db and create new article
-    user.save(function () {
-      article = {
-        title: 'Article Title',
-        content: 'Article Content'
-      };
+    user.save()
+      .then(function () {
+        article = {
+          title: 'Article Title',
+          content: 'Article Content'
+        };
 
-      done();
-    });
+        done();
+      })
+      .catch(done);
   });
 
   it('should not be able to save an article if logged in without the "admin" role', function (done) {
@@ -117,7 +119,7 @@ describe('Article CRUD tests', function () {
     // Save the article
     articleObj.save(function () {
       // Request articles
-      request(app).get('/api/articles')
+      agent.get('/api/articles')
         .end(function (req, res) {
           // Set assertion
           res.body.should.be.instanceof(Array).and.have.lengthOf(1);
@@ -135,7 +137,7 @@ describe('Article CRUD tests', function () {
 
     // Save the article
     articleObj.save(function () {
-      request(app).get('/api/articles/' + articleObj._id)
+      agent.get('/api/articles/' + articleObj._id)
         .end(function (req, res) {
           // Set assertion
           res.body.should.be.instanceof(Object).and.have.property('title', article.title);
@@ -148,7 +150,7 @@ describe('Article CRUD tests', function () {
 
   it('should return proper error for single article with an invalid Id, if not signed in', function (done) {
     // test is not a valid mongoose Id
-    request(app).get('/api/articles/test')
+    agent.get('/api/articles/test')
       .end(function (req, res) {
         // Set assertion
         res.body.should.be.instanceof(Object).and.have.property('message', 'Article is invalid');
@@ -160,7 +162,7 @@ describe('Article CRUD tests', function () {
 
   it('should return proper error for single article which doesnt exist, if not signed in', function (done) {
     // This is a valid mongoose Id but a non-existent article
-    request(app).get('/api/articles/559e9cd815f80b4c256a8f41')
+    agent.get('/api/articles/559e9cd815f80b4c256a8f41')
       .end(function (req, res) {
         // Set assertion
         res.body.should.be.instanceof(Object).and.have.property('message', 'No article with that identifier has been found');
@@ -200,7 +202,7 @@ describe('Article CRUD tests', function () {
     // Save the article
     articleObj.save(function () {
       // Try deleting article
-      request(app).delete('/api/articles/' + articleObj._id)
+      agent.delete('/api/articles/' + articleObj._id)
         .expect(403)
         .end(function (articleDeleteErr, articleDeleteRes) {
           // Set message assertion
@@ -216,7 +218,7 @@ describe('Article CRUD tests', function () {
   it('should be able to get a single article that has an orphaned user reference', function (done) {
     // Create orphan user creds
     var _creds = {
-      username: 'orphan',
+      usernameOrEmail: 'orphan',
       password: 'M3@n.jsI$Aw3$0m3'
     };
 
@@ -226,7 +228,7 @@ describe('Article CRUD tests', function () {
       lastName: 'Name',
       displayName: 'Full Name',
       email: 'orphan@test.com',
-      username: _creds.username,
+      username: _creds.usernameOrEmail,
       password: _creds.password,
       provider: 'local',
       roles: ['admin']
@@ -306,8 +308,11 @@ describe('Article CRUD tests', function () {
     var articleObj = new Article(article);
 
     // Save the article
-    articleObj.save(function () {
-      request(app).get('/api/articles/' + articleObj._id)
+    articleObj.save(function (err) {
+      if (err) {
+        return done(err);
+      }
+      agent.get('/api/articles/' + articleObj._id)
         .end(function (req, res) {
           // Set assertion
           res.body.should.be.instanceof(Object).and.have.property('title', article.title);
@@ -322,7 +327,7 @@ describe('Article CRUD tests', function () {
   it('should be able to get single article, that a different user created, if logged in & verify the "isCurrentUserOwner" field is set to "false"', function (done) {
     // Create temporary user creds
     var _creds = {
-      username: 'articleowner',
+      usernameOrEmail: 'articleowner',
       password: 'M3@n.jsI$Aw3$0m3'
     };
 
@@ -332,7 +337,7 @@ describe('Article CRUD tests', function () {
       lastName: 'Name',
       displayName: 'Full Name',
       email: 'temp@test.com',
-      username: _creds.username,
+      username: _creds.usernameOrEmail,
       password: _creds.password,
       provider: 'local',
       roles: ['admin', 'user']
@@ -407,8 +412,9 @@ describe('Article CRUD tests', function () {
   });
 
   afterEach(function (done) {
-    User.remove().exec(function () {
-      Article.remove().exec(done);
-    });
+    Article.remove().exec()
+      .then(User.remove().exec())
+      .then(done())
+      .catch(done);
   });
 });

@@ -1,9 +1,10 @@
 [![MEAN.JS Logo](http://meanjs.org/img/logo-small.png)](http://meanjs.org/)
 
-[![Gitter](https://badges.gitter.im/Join Chat.svg)](https://gitter.im/meanjs/mean?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/meanjs/mean?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![Build Status](https://travis-ci.org/meanjs/mean.svg?branch=master)](https://travis-ci.org/meanjs/mean)
 [![Dependencies Status](https://david-dm.org/meanjs/mean.svg)](https://david-dm.org/meanjs/mean)
 [![Coverage Status](https://coveralls.io/repos/meanjs/mean/badge.svg?branch=master&service=github)](https://coveralls.io/github/meanjs/mean?branch=master)
+[![Known Vulnerabilities](https://snyk.io/test/github/meanjs/mean/badge.svg)](https://snyk.io/test/github/meanjs/mean)
 
 MEAN.JS is a full-stack JavaScript open-source solution, which provides a solid starting point for [MongoDB](http://www.mongodb.org/), [Node.js](http://www.nodejs.org/), [Express](http://expressjs.com/), and [AngularJS](http://angularjs.org/) based applications. The idea is to solve the common issues with connecting those frameworks, build a robust framework to support daily development needs, and help developers use better practices while working with popular JavaScript components.
 
@@ -83,7 +84,7 @@ If you encounter any problems, try the Troubleshooting section.
 Explore `config/env/development.js` for development environment configuration options.
 
 ### Running in Production mode
-To run your application with *production* environment configuration, execute grunt as follows:
+To run your application with *production* environment configuration:
 
 ```bash
 $ npm run start:prod
@@ -209,6 +210,22 @@ $ docker build -t mean -f Dockerfile-production .
 $ docker run -p 27017:27017 -d --name db mongo
 $ docker run -p 3000:3000 --link db:db_1 mean
 ```
+
+## Deploying to PAAS
+
+###  Deploying MEANJS To Heroku
+
+By clicking the button below you can signup for Heroku and deploy a working copy of MEANJS to the cloud without having to do the steps above.
+
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
+
+### Amazon S3 configuration
+
+To save the profile images to S3, simply set those environment variables:
+UPLOADS_STORAGE: s3
+S3_BUCKET: the name of the bucket where the images will be saved
+S3_ACCESS_KEY_ID: Your S3 access key
+S3_SECRET_ACCESS_KEY: Your S3 access key password
 
 ## Getting Started With MEAN.JS
 You have your application running, but there is a lot of stuff to understand. We recommend you go over the [Official Documentation](http://meanjs.org/docs.html).
